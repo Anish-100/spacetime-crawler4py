@@ -21,11 +21,18 @@ def is_valid(url):
     # Decide whether to crawl this url or not. 
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
+    allowed_sites = [
+        re.compile(r"^([z-a0-9-]+\.)*ics.uci.edu$"),
+        re.compile(r"^([z-a0-9-]+\.)*cs.uci.edu$"),
+        re.compile(r"^([z-a0-9-]+\.)*informatics.uci.edu$"),
+        re.compile(r"^([z-a0-9-]+\.)*stat.uci.edu$"),
+    ]
     try:
         parsed = urlparse(url)
-        if parsed.scheme not in set(["http", "https"]):
+        if parsed.scheme not in {"http", "https"}:
             return False
-        return not re.match(
+        
+        return any(site.match(parsed.netloc) for site in allowed_sites) and not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
@@ -33,8 +40,8 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
-
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()
+        )
     except TypeError:
         print ("TypeError for ", parsed)
-        raise
+print(urlparse("https://www.vision.ics.uci.edu/news/"))
