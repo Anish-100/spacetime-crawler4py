@@ -14,14 +14,15 @@ def is_unique(url):
     new_url = parsed.netloc
     if  new_url not in unique_urls:
         unique_urls.add(new_url)
-    with open('./files/unique_domains.txt','a') as f:
-        f.write(f'{new_url},')
+        with open('./files/unique_domains.txt','a') as f:
+            f.write(f'{new_url},')
 
 
 def scraper(url, resp):
     res = []
     if is_valid(url):
         is_unique(url)
+        write_line_to_file('./files/pages_visited.txt',url)
         links = extract_next_links(url, resp)
         for link in links:
             if is_valid(link):
@@ -41,7 +42,7 @@ def extract_next_links(url, resp):
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
     res = []
     if resp.error is not None:
-        write_to_file('./files/failed_pages.txt', f'{resp.url} raised Error {resp.error}.')
+        write_line_to_file('./files/failed_pages.txt', f'{resp.url} raised Error {resp.error}.')
         return []
     soup = BeautifulSoup(resp.raw_response.content, "html.parser")
     for anchor in soup.find_all('a'):
@@ -74,9 +75,9 @@ def is_valid(url):
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()
         )
     except Exception as e:
-        write_to_file('./files/failed_pages.txt',f'Invalid URL: {url}, Type: {e}')
+        write_line_to_file('./files/failed_pages.txt',f'Invalid URL: {url}, Type: {e}')
 
-def write_to_file(file_name, text):
+def write_line_to_file(file_name, text):
     with open(file_name, 'a') as f:
         f.write(text)
         f.write('\n')
