@@ -22,7 +22,6 @@ def scraper(url, resp):
     res = []
     if is_valid(url):
         is_unique(url)
-        write_line_to_file('./files/pages_visited.txt',url)
         links = extract_next_links(url, resp)
         for link in links:
             if is_valid(link):
