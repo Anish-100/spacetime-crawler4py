@@ -1,9 +1,11 @@
 import re
 from urllib.parse import urlparse
-
+from bs4 import BeautifulSoup
 def scraper(url, resp):
-    links = extract_next_links(url, resp)
-    return [link for link in links if is_valid(link)]
+    if is_valid(url):
+        links = extract_next_links(url, resp)
+        return [link for link in links if is_valid(link)]
+    return []
 
 def extract_next_links(url, resp):
     # Implementation required.
@@ -15,17 +17,24 @@ def extract_next_links(url, resp):
     #         resp.raw_response.url: the url, again
     #         resp.raw_response.content: the content of the page!
     # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    return list()
+    res = []
+    if resp.error is not None:
+        write_to_file('failed_pages.txt', f'{resp.url} rasied Error {resp.error}.')
+        return []
+    soup = BeautifulSoup(resp.raw_response.content, "html.parser")
+    for anchor in soup.find_all('a'):
+       res.append(anchor.get("href",'/'))
+    return res
 
 def is_valid(url):
     # Decide whether to crawl this url or not. 
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
     allowed_sites = [
-        re.compile(r"^([z-a0-9-]+\.)*ics.uci.edu$"),
-        re.compile(r"^([z-a0-9-]+\.)*cs.uci.edu$"),
-        re.compile(r"^([z-a0-9-]+\.)*informatics.uci.edu$"),
-        re.compile(r"^([z-a0-9-]+\.)*stat.uci.edu$"),
+        re.compile(r"^([a-z0-9-]+\.)*ics.uci.edu$"),
+        re.compile(r"^([a-z0-9-]+\.)*cs.uci.edu$"),
+        re.compile(r"^([a-z0-9-]+\.)*informatics.uci.edu$"),
+        re.compile(r"^([a-z0-9-]+\.)*stat.uci.edu$"),
     ]
     try:
         parsed = urlparse(url)
@@ -43,5 +52,9 @@ def is_valid(url):
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()
         )
     except TypeError:
+        write_to_file('failed_pages.txt',f'Invalid URL: {url}')
         print ("TypeError for ", parsed)
-print(urlparse("https://www.vision.ics.uci.edu/news/"))
+
+def write_to_file(file_name, text):
+    with open(file_name, 'w') as f:
+        f.write(text)
