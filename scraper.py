@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 
 
 unique_urls = set()
-with open('./files/unique_domains','r') as f:
+with open('./files/unique_domains.txt','r') as f:
     for line in f:
         unique_urls.add(line.strip().split(","))
     
@@ -14,7 +14,7 @@ def is_unique(url):
     new_url = parsed.netloc
     if  new_url not in unique_urls:
         unique_urls.add(new_url)
-    with open('./files/unique_domains','a') as f:
+    with open('./files/unique_domains.txt','a') as f:
         f.write(f'{new_url},')
 
 
