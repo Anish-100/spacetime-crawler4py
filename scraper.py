@@ -4,28 +4,43 @@ from bs4 import BeautifulSoup
 
 
 
-unique_urls = set()
-with open('./files/unique_domains.txt','r') as f:
-    for line in f:
-        unique_urls.add(line.strip().split(","))
-    
-def is_unique(url):
+
+UNIQUE_DOMAINS_FILE = './files/unique_domains.txt'
+VISITED_PAGES_FILE = './files/pages_visited.txt'
+
+def load_set(path):
+    try:
+        with open(path) as f:
+            return {line.strip() for line in f if line.strip()}
+    except FileNotFoundError:
+        return set()
+
+unique_domains = load_set(UNIQUE_DOMAINS_FILE)
+visited_pages = load_set(VISITED_PAGES_FILE)
+
+def _is_unique(url):
     parsed = urlparse(url)
     new_url = parsed.netloc
-    if  new_url not in unique_urls:
-        unique_urls.add(new_url)
+    if  new_url not in unique_domains:
+        unique_domains.add(new_url)
         with open('./files/unique_domains.txt','a') as f:
             f.write(f'{new_url},')
 
+def _visited(url):
+    if url in visited_pages:
+        return False
+    visited_pages.add(url)
+    return True
 
 def scraper(url, resp):
     res = []
-    if is_valid(url):
-        is_unique(url)
+    if _is_valid(url):
+        _is_unique(url)
+        _visited(url)
         links = extract_next_links(url, resp)
         for link in links:
-            if is_valid(link):
-                is_unique(link)
+            if _is_valid(link) and not _visited(link):
+                _is_unique(link) # Check if it should be added to unique
                 res.append(link)
     return res
 
@@ -48,7 +63,7 @@ def extract_next_links(url, resp):
        res.append(anchor.get("href",'/'))
     return res
 
-def is_valid(url):
+def _is_valid(url):
     # Decide whether to crawl this url or not. 
     # If you decide to crawl it, return True; otherwise return False.
     # There are already some conditions that return False.
