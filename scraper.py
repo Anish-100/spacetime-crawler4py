@@ -24,7 +24,7 @@ def _is_unique(url):
     if  new_url not in unique_domains:
         unique_domains.add(new_url)
         with open('./files/unique_domains.txt','a') as f:
-            f.write(f'{new_url},')
+            f.write(f'{new_url}\n')
 
 def _visited(url):
     if url in visited_pages:
