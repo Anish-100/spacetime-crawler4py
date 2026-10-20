@@ -2,9 +2,6 @@ import re
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 
-
-
-
 UNIQUE_DOMAINS_FILE = './files/unique_domains.txt'
 VISITED_PAGES_FILE = './files/pages_visited.txt'
 
@@ -18,15 +15,31 @@ def load_set(path):
 unique_domains = load_set(UNIQUE_DOMAINS_FILE)
 visited_pages = load_set(VISITED_PAGES_FILE)
 
-def _is_unique(url):
+def write_line_to_file(file_name, text):
+    """
+    This is a helper function that takes in some text then writes the text
+    to the given file_name with a new line at the end
+    """
+    with open(file_name, 'a') as f:
+        f.write(f'{text}\n')
+        f.write('\n')
+
+def _add_to_unique(url):
+    """
+    Adds the url to the list of unique domains if it hasn't been listed yet
+    """
     parsed = urlparse(url)
     new_url = parsed.netloc
     if  new_url not in unique_domains:
         unique_domains.add(new_url)
-        with open('./files/unique_domains.txt','a') as f:
-            f.write(f'{new_url}\n')
+        write_line_to_file('./files/unique_domains.txt', f'{new_url}')
 
-def _visited(url):
+def _is_unvisited(url):
+    """
+    Checked if the url is in the set of visited pages.
+    Returns false if the page is has not been visited otherwise
+    returns true and adds it to the visited pages
+    """
     if url in visited_pages:
         return False
     visited_pages.add(url)
@@ -35,13 +48,15 @@ def _visited(url):
 def scraper(url, resp):
     res = []
     if _is_valid(url):
-        _is_unique(url)
-        _visited(url)
+        _add_to_unique(url)
+        _is_unvisited(url)
         links = extract_next_links(url, resp)
+
         for link in links:
-            if _is_valid(link) and not _visited(link):
-                _is_unique(link) # Check if it should be added to unique
+            if _is_valid(link) and not _is_unvisited(link):
+                _add_to_unique(link)
                 res.append(link)
+
     return res
 
 def extract_next_links(url, resp):
@@ -90,8 +105,3 @@ def _is_valid(url):
         )
     except Exception as e:
         write_line_to_file('./files/failed_pages.txt',f'Invalid URL: {url}, Type: {e}')
-
-def write_line_to_file(file_name, text):
-    with open(file_name, 'a') as f:
-        f.write(text)
-        f.write('\n')
