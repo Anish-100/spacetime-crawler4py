@@ -1,99 +1,119 @@
+import os
 import re
-from urllib.parse import urlparse
+import json
+from collections import Counter
+from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
 
-UNIQUE_DOMAINS_FILE = './files/unique_domains.txt'
-VISITED_PAGES_FILE = './files/pages_visited.txt'
+os.makedirs('./files', exist_ok=True)
+VISITED_PAGES_FILE = './files/pages_visited.txt'   # one URL per line (for unique pages + subdomains)
+STATS_FILE = './files/stats.json'                  # word counts + longest page
+FAILED_FILE = './files/failed_pages.txt'
 
-def load_set(path):
+MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
+MIN_WORDS = 50                 # pages with fewer words = low information
+MAX_URL_LEN = 200              # very long URLs are usually traps
+
+ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
+
+# calendars, date archives, and action links tend to be infinite traps
+TRAP_REGEX = re.compile(
+    r"(calendar|ical|\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|action=|do=|share=|replytocom|"
+    r"login|logout|sessionid|/feed|/wp-json|\?.*(sort|filter|format)=)", re.I)
+
+STOP_WORDS = set("""a about above after again against all am an and any are aren't as at be because been before being below between both but by can't cannot could couldn't did didn't do does doesn't doing don't down during each few for from further had hadn't has hasn't have haven't having he he'd he'll he's her here here's hers herself him himself his how how's i i'd i'll i'm i've if in into is isn't it it's its itself let's me more most mustn't my myself no nor not of off on once only or other ought our ours ourselves out over own same shan't she she'd she'll she's should shouldn't so some such than that that's the their theirs them themselves then there there's these they they'd they'll they're they've this those through to too under until up very was wasn't we we'd we'll we're we've were weren't what what's when when's where where's which while who who's whom why why's with won't would wouldn't you you'd you'll you're you've your yours yourself yourselves""".split())
+
+# ---- load saved state so a restart doesn't lose data ----
+def load_stats():
     try:
-        with open(path) as f:
-            return {line.strip() for line in f if line.strip()}
-    except FileNotFoundError:
-        return set()
+        with open(STATS_FILE) as f:
+            d = json.load(f)
+        return Counter(d["words"]), d["longest"]
+    except (FileNotFoundError, ValueError):
+        return Counter(), ["", 0]   # [url, word count]
 
-unique_domains = load_set(UNIQUE_DOMAINS_FILE)
-visited_pages = load_set(VISITED_PAGES_FILE)
+word_counts, longest_page = load_stats()
+pages_since_save = 0
+
+def save_stats():
+    with open(STATS_FILE, 'w') as f:
+        json.dump({"words": word_counts, "longest": longest_page}, f)
 
 def write_line_to_file(file_name, text):
-    """
-    This is a helper function that takes in some text then writes the text
-    to the given file_name with a new line at the end
-    """
     with open(file_name, 'a') as f:
         f.write(f'{text}\n')
-        f.write('\n')
-
-def _add_to_unique(url):
-    """
-    Adds the url to the list of unique domains if it hasn't been listed yet
-    """
-    parsed = urlparse(url)
-    new_url = parsed.netloc
-    if  new_url not in unique_domains:
-        unique_domains.add(new_url)
-        write_line_to_file('./files/unique_domains.txt', f'{new_url}')
-
-def _is_unvisited(url):
-    """
-    Checked if the url is in the set of visited pages.
-    Returns false if the page is has not been visited otherwise
-    returns true and adds it to the visited pages
-    """
-    if url in visited_pages:
-        return False
-    visited_pages.add(url)
-    return True
 
 def scraper(url, resp):
-    res = []
-    if _is_valid(url):
-        _add_to_unique(url)
-        _is_unvisited(url)
-        links = extract_next_links(url, resp)
-
-        for link in links:
-            if _is_valid(link) and not _is_unvisited(link):
-                _add_to_unique(link)
-                res.append(link)
-
-    return res
+    links = extract_next_links(url, resp)
+    return [link for link in links if _is_valid(link)]
 
 def extract_next_links(url, resp):
-    # Implementation required.
-    # url: the URL that was used to get the page
-    # resp.url: the actual url of the page
-    # resp.status: the status code returned by the server. 200 is OK, you got the page. Other numbers mean that there was some kind of problem.
-    # resp.error: when status is not 200, you can check the error here, if needed.
-    # resp.raw_response: this is where the page actually is. More specifically, the raw_response has two parts:
-    #         resp.raw_response.url: the url, again
-    #         resp.raw_response.content: the content of the page!
-    # Return a list with the hyperlinks (as strings) scrapped from resp.raw_response.content
-    res = []
-    if resp.error is not None:
-        write_line_to_file('./files/failed_pages.txt', f'{resp.url} raised Error {resp.error}.')
+    global pages_since_save
+
+    # only process good responses that actually contain a page
+    if resp.status != 200 or resp.raw_response is None or not resp.raw_response.content:
+        write_line_to_file(FAILED_FILE, f'{url} status={resp.status} error={resp.error}')
         return []
-    soup = BeautifulSoup(resp.raw_response.content, "html.parser")
-    for anchor in soup.find_all('a'):
-       res.append(anchor.get("href",'/'))
+
+    content = resp.raw_response.content
+    if len(content) > MAX_BYTES:       # very large file
+        return []
+
+    # use the final URL (after redirects) as the base for relative links
+    base_url = urldefrag(resp.raw_response.url or url)[0]
+
+    soup = BeautifulSoup(content, "html.parser")
+    for tag in soup(["script", "style"]):      # code/markup are not words
+        tag.decompose()
+    words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", soup.get_text(separator=" ").lower())
+
+    # record this page as a unique page found (for the report)
+    write_line_to_file(VISITED_PAGES_FILE, base_url)
+
+    # low-information / dead page: don't count its words or follow its links
+    if len(words) < MIN_WORDS:
+        return []
+
+    # update stats for the report
+    if len(words) > longest_page[1]:
+        longest_page[0], longest_page[1] = base_url, len(words)
+    word_counts.update(w for w in words if w not in STOP_WORDS and len(w) > 1)
+    pages_since_save += 1
+    if pages_since_save >= 10:
+        save_stats()
+        pages_since_save = 0
+
+    # collect links: make absolute, remove fragment
+    res = []
+    for anchor in soup.find_all('a', href=True):
+        link = urldefrag(urljoin(base_url, anchor['href'].strip()))[0]
+        res.append(link)
     return res
 
 def _is_valid(url):
-    # Decide whether to crawl this url or not. 
-    # If you decide to crawl it, return True; otherwise return False.
-    # There are already some conditions that return False.
-    allowed_sites = [
-        re.compile(r"^([a-z0-9-]+\.)*ics.uci.edu$"),
-        re.compile(r"^([a-z0-9-]+\.)*cs.uci.edu$"),
-        re.compile(r"^([a-z0-9-]+\.)*informatics.uci.edu$"),
-        re.compile(r"^([a-z0-9-]+\.)*stat.uci.edu$"),
-    ]
     try:
+        if not url.isascii() or len(url) > MAX_URL_LEN:
+            return False
         parsed = urlparse(url)
         if parsed.scheme not in {"http", "https"}:
             return False
-        
-        return any(site.match(parsed.netloc) for site in allowed_sites) and not re.match(
+
+        # must be one of the 4 allowed domains (or a subdomain of them)
+        host = (parsed.hostname or "").lower()
+        if not any(host == d or host.endswith("." + d) for d in ALLOWED_SITES):
+            return False
+
+        # trap: calendars, action links, etc.
+        if TRAP_REGEX.search(parsed.path + "?" + parsed.query):
+            return False
+
+        # trap: a path segment repeating 3+ times (e.g. /a/b/a/b/a/b)
+        segments = [s for s in parsed.path.split("/") if s]
+        if segments and max(Counter(segments).values()) >= 3:
+            return False
+
+        # skip non-text file types
+        return not re.match(
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
@@ -101,7 +121,7 @@ def _is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower()
-        )
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
     except Exception as e:
-        write_line_to_file('./files/failed_pages.txt',f'Invalid URL: {url}, Type: {e}')
+        write_line_to_file(FAILED_FILE, f'Invalid URL: {url}, Type: {e}')
+        return False
