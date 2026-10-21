@@ -51,7 +51,7 @@ def extract_next_links(url, resp):
     global pages_since_save
 
     # only process good responses that actually contain a page
-    if resp.status != 200 or resp.raw_response is None or not resp.raw_response.content:
+    if resp.status != 200 or resp.raw_response is None or not resp.raw_response.content or resp.error is not None:
         write_line_to_file(FAILED_FILE, f'{url} status={resp.status} error={resp.error}')
         return []
 
@@ -86,7 +86,10 @@ def extract_next_links(url, resp):
     # collect links: make absolute, remove fragment
     res = []
     for anchor in soup.find_all('a', href=True):
-        link = urldefrag(urljoin(base_url, anchor['href'].strip()))[0]
+        try:
+            link = urldefrag(urljoin(base_url, anchor['href'].strip()))[0]
+        except ValueError:      # malformed href (e.g. bad IPv6 bracket host)
+            continue
         res.append(link)
     return res
 
