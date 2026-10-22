@@ -23,7 +23,11 @@ class Worker(Thread):
             if not tbd_url:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
                 break
-            resp = download(tbd_url, self.config, self.logger)
+            resp = self.download_with_retry(tbd_url)
+            if resp is None:
+                self.logger.error(f"Giving up on {tbd_url}")
+                self.frontier.mark_url_complete(tbd_url)
+                raise ConnectionError(f"Giving up on {tbd_url}")
             self.logger.info(
                 f"Downloaded {tbd_url}, status <{resp.status}>, "
                 f"using cache {self.config.cache_server}.")
@@ -32,3 +36,14 @@ class Worker(Thread):
                 self.frontier.add_url(scraped_url)
             self.frontier.mark_url_complete(tbd_url)
             time.sleep(self.config.time_delay)
+
+    def download_with_retry(self, url, attempts=15):
+        for i in range(attempts):
+            try:
+                return download(url, self.config, self.logger)
+            except (ConnectionError, TimeoutError) as e:
+                self.logger.warning(f"{url}: {e} (attempt {i+1}/{attempts})")
+                if i < attempts - 1:
+                    time.sleep(min(2 ** i, 20))  # 1s, 2s, 4s, 8s... capped at 20s
+        return None
+
