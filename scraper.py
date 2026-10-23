@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import hashlib
 from collections import Counter
 from urllib.parse import urlparse, urljoin, urldefrag
 from bs4 import BeautifulSoup
@@ -9,6 +10,8 @@ os.makedirs('./files', exist_ok=True)
 VISITED_PAGES_FILE = './files/pages_visited.txt'   # one URL per line (for unique pages + subdomains)
 STATS_FILE = './files/stats.json'                  # word counts + longest page
 FAILED_FILE = './files/failed_pages.txt'
+HASH_FILE = './files/page_hashes.txt'
+TEST_HASH_FILE = './files/test_hashes.txt'
 
 MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
@@ -74,6 +77,11 @@ def extract_next_links(url, resp):
     if len(words) < MIN_WORDS:
         return []
 
+    # duplicate page: don't count its words or follow its links
+    page_hash = _get_fingerprints(words)
+    if _fingerprints_match(page_hash):
+       return []
+
     # update stats for the report
     if len(words) > longest_page[1]:
         longest_page[0], longest_page[1] = base_url, len(words)
@@ -128,3 +136,52 @@ def _is_valid(url):
     except Exception as e:
         write_line_to_file(FAILED_FILE, f'Invalid URL: {url}, Type: {e}')
         return False
+
+def _get_fingerprints(words):   
+    '''
+    Get the fingerprints of the page.
+  
+    Uses generic fingerprints method from lecture.
+    Hash each set of 5 words and keep all hashes divisible by 4 as fingerprints.
+    '''
+    NGRAM_LENGTH = 10
+    CHOOSE_HASHES = 20
+
+    # every NGRAM_LENGTH words are hashed
+    word_hashes = []
+    for n in range(NGRAM_LENGTH, len(words), NGRAM_LENGTH):
+        ngram = ' '.join(words[n-NGRAM_LENGTH:n])
+        word_hashes.append(hashlib.sha256(ngram.encode())) # has potential to use other hash function
+  
+    # every CHOOSE_HASHES-th ngram is chosen to be part of the fingerprint
+    hashes = set()
+    i = 0
+    for w_hash in word_hashes:
+        if i % CHOOSE_HASHES == 0:
+           hashes.add(w_hash.hexdigest())
+        ++i
+
+    return hashes
+    
+def _fingerprints_match(page_hash_set):
+    '''
+    Returns true if the given hashes are similar to other page's hashes.
+
+    Checks if ((intersection of hashes) / (union of hashes)) > threshold.
+    Threshold for similarity is 90%.
+    '''
+    THRESHOLD_LEVEL = .9
+    try:
+        with open(HASH_FILE, 'r') as f:
+            for other_hashes in f:
+                other_hash_set = set(other_hashes)
+                similarity = len(other_hash_set.intersection(page_hash_set)) / len(other_hash_set.union(page_hash_set))
+                if similarity >= THRESHOLD_LEVEL:
+                    write_line_to_file(TEST_HASH_FILE, page_hash_set)
+                    return True
+    except FileNotFoundError:
+        # if this is the first time running and page_hashes.txt doesn't exist, it'll be created
+        pass
+    
+    write_line_to_file(HASH_FILE, page_hash_set)
+    return False
