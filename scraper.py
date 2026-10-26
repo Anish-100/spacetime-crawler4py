@@ -11,11 +11,11 @@ VISITED_PAGES_FILE = './files/pages_visited.txt'   # one URL per line (for uniqu
 STATS_FILE = './files/stats.json'                  # word counts + longest page
 FAILED_FILE = './files/failed_pages.txt'
 HASH_FILE = './files/page_hashes.txt'
-TEST_HASH_FILE = './files/test_hashes.txt'
 
 MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
 MAX_URL_LEN = 200              # very long URLs are usually traps
+NUM_HASH_BITS = 64                 # hashes for simhash are 64 bits
 
 ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
 
@@ -78,8 +78,8 @@ def extract_next_links(url, resp):
         return []
 
     # duplicate page: don't count its words or follow its links
-    page_hash = _get_fingerprints(words)
-    if _fingerprints_match(page_hash):
+    page_hash = _get_simhash(words)
+    if _is_simhash_match(page_hash, url_p=url):
        return []
 
     # update stats for the report
@@ -137,51 +137,64 @@ def _is_valid(url):
         write_line_to_file(FAILED_FILE, f'Invalid URL: {url}, Type: {e}')
         return False
 
-def _get_fingerprints(words):   
+def _get_simhash(words):   
     '''
-    Get the fingerprints of the page.
-  
-    Uses generic fingerprints method from lecture.
-    Hash each set of 5 words and keep all hashes divisible by 4 as fingerprints.
+    Get the simhash of the page.
+
+    Collect words and hash them into 64bits. Sum each hash with weights
+    to determine what the most common bit at a position was and have
+    it accordingly in the simhash
     '''
-    NGRAM_LENGTH = 10
-    CHOOSE_HASHES = 20
-
-    # every NGRAM_LENGTH words are hashed
-    word_hashes = []
-    for n in range(NGRAM_LENGTH, len(words), NGRAM_LENGTH):
-        ngram = ' '.join(words[n-NGRAM_LENGTH:n])
-        word_hashes.append(hashlib.sha256(ngram.encode())) # has potential to use other hash function
-  
-    # every CHOOSE_HASHES-th ngram is chosen to be part of the fingerprint
-    hashes = set()
-    i = 0
-    for w_hash in word_hashes:
-        if i % CHOOSE_HASHES == 0:
-           hashes.add(w_hash.hexdigest())
-        ++i
-
-    return hashes
     
-def _fingerprints_match(page_hash_set):
+    frequencies = _compute_word_frequencies(words)
+
+    bits = [0] * NUM_HASH_BITS
+    for word, frequency in frequencies.items():
+        # get first 8 bytes of hash --> convert to int --> convert to 64 bits
+        byte_hash = hashlib.sha256(word.encode('utf-8')).digest()[:8]
+        int_hash = int.from_bytes(byte_hash, 'big')
+        bit_hash = f'{int_hash:0{NUM_HASH_BITS}b}'
+
+        # add if the bit is 1 and subtract if the bit is 0
+        for i in range(NUM_HASH_BITS):
+            bits[i] += (1 if bit_hash[i] == '1' else -1) * frequency
+        
+    # positive sum indices = 1, non-positive sum indices = 0
+    return int(''.join('1' if bits[i] > 0 else '0' for i in range(NUM_HASH_BITS)), 2) # converted to base10 for XOR calcs
+
+    
+def _compute_word_frequencies(tokens):
+    '''
+    Takes in a list of tokens and returns a dict of the 
+    tokens and their frequencies.
+    '''
+    frequencies = {}
+    for token in tokens: 
+        if token not in frequencies:
+            frequencies[token] = 1
+        else:
+            frequencies[token] += 1
+    return frequencies
+
+def _is_simhash_match(page_hash, url_p):
     '''
     Returns true if the given hashes are similar to other page's hashes.
 
-    Checks if ((intersection of hashes) / (union of hashes)) > threshold.
-    Threshold for similarity is 90%.
+    Checks if ((# common bits) / (# total bits)) > threshold
+    Threshold for similarity is 62 bits in common, or roughly 97% similarity.
     '''
-    THRESHOLD_LEVEL = .9
+    THRESHOLD_BITS = 62
     try:
         with open(HASH_FILE, 'r') as f:
-            for other_hashes in f:
-                other_hash_set = set(other_hashes)
-                similarity = len(other_hash_set.intersection(page_hash_set)) / len(other_hash_set.union(page_hash_set))
-                if similarity >= THRESHOLD_LEVEL:
-                    write_line_to_file(TEST_HASH_FILE, page_hash_set)
+            for other_hash_line in f:
+                # Counting 0 bits from XOR = counting # bits in common
+                hash_xor = page_hash ^ int(other_hash_line)
+                similarity = f'{hash_xor:0{NUM_HASH_BITS}b}'.count('0')
+                if similarity >= THRESHOLD_BITS:
                     return True
     except FileNotFoundError:
         # if this is the first time running and page_hashes.txt doesn't exist, it'll be created
         pass
     
-    write_line_to_file(HASH_FILE, page_hash_set)
+    write_line_to_file(HASH_FILE, page_hash)
     return False
