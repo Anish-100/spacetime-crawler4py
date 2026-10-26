@@ -15,7 +15,7 @@ HASH_FILE = './files/page_hashes.txt'
 MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
 MAX_URL_LEN = 200              # very long URLs are usually traps
-NUM_HASH_BITS = 64                 # hashes for simhash are 64 bits
+NUM_HASH_BITS = 64             # hashes for simhash are 64 bits
 
 ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
 
@@ -28,6 +28,9 @@ STOP_WORDS = set("""a about above after again against all am an and any are aren
 
 # ---- load saved state so a restart doesn't lose data ----
 def load_stats():
+    '''
+    Loads the stats from previous sessions.
+    '''
     try:
         with open(STATS_FILE) as f:
             d = json.load(f)
@@ -39,18 +42,30 @@ word_counts, longest_page = load_stats()
 pages_since_save = 0
 
 def save_stats():
+    '''
+    Saves stats for the report.
+    '''
     with open(STATS_FILE, 'w') as f:
         json.dump({"words": word_counts, "longest": longest_page}, f)
 
 def write_line_to_file(file_name, text):
+    '''
+    Appends a line of text to a file.
+    '''
     with open(file_name, 'a') as f:
         f.write(f'{text}\n')
 
 def scraper(url, resp):
+    '''
+    Returns next links from a page given they are valid.
+    '''
     links = extract_next_links(url, resp)
     return [link for link in links if _is_valid(link)]
 
 def extract_next_links(url, resp):
+    '''
+    Returns a list of the links from a given page and updates the report.
+    '''
     global pages_since_save
 
     # only process good responses that actually contain a page
@@ -102,6 +117,11 @@ def extract_next_links(url, resp):
     return res
 
 def _is_valid(url):
+    '''
+    Returns true if a URL is valid.
+
+    Checks url length, http/https, domain, common traps, and non-text file types. 
+    '''
     try:
         if not url.isascii() or len(url) > MAX_URL_LEN:
             return False
