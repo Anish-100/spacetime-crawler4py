@@ -38,8 +38,22 @@ def load_stats():
     except (FileNotFoundError, ValueError):
         return Counter(), ["", 0]   # [url, word count]
 
+def load_hashes():
+    '''
+    Loads all the hashes of previous pages
+    '''
+    try:
+        with open(HASH_FILE) as f:
+            return [int(line) for line in f if line.strip()]
+    except FileNotFoundError:
+        return []     # if this is the first time running and page_hashes.txt doesn't exist, it'll be created
+
+    
+        
+
 word_counts, longest_page = load_stats()
 pages_since_save = 0
+page_hashes = load_hashes()
 
 def save_stats():
     '''
@@ -92,15 +106,18 @@ def extract_next_links(url, resp):
     if len(words) < MIN_WORDS:
         return []
 
-    # duplicate page: don't count its words or follow its links
-    page_hash = _get_simhash(words)
-    if _is_simhash_match(page_hash, url_p=url):
-       return []
+    content_words = [w for w in words if w not in STOP_WORDS and len(w) > 1]
 
+
+    # duplicate page: don't count its words or follow its links
+    page_hash = _get_simhash(content_words)
+    if _is_simhash_match(page_hash):
+       return []
+    
     # update stats for the report
     if len(words) > longest_page[1]:
-        longest_page[0], longest_page[1] = base_url, len(words)
-    word_counts.update(w for w in words if w not in STOP_WORDS and len(w) > 1)
+                longest_page[0], longest_page[1] = base_url, len(words)
+    word_counts.update(content_words) # content_words as stop words are removed.
     pages_since_save += 1
     if pages_since_save >= 10:
         save_stats()
@@ -196,25 +213,21 @@ def _compute_word_frequencies(tokens):
             frequencies[token] += 1
     return frequencies
 
-def _is_simhash_match(page_hash, url_p):
+def _is_simhash_match(page_hash):
     '''
     Returns true if the given hashes are similar to other page's hashes.
 
-    Checks if ((# common bits) / (# total bits)) > threshold
+    Checks if ((# common bits) / (# total bits)) >= threshold
     Threshold for similarity is 62 bits in common, or roughly 97% similarity.
     '''
     THRESHOLD_BITS = 62
-    try:
-        with open(HASH_FILE, 'r') as f:
-            for other_hash_line in f:
-                # Counting 0 bits from XOR = counting # bits in common
-                hash_xor = page_hash ^ int(other_hash_line)
-                similarity = f'{hash_xor:0{NUM_HASH_BITS}b}'.count('0')
-                if similarity >= THRESHOLD_BITS:
-                    return True
-    except FileNotFoundError:
-        # if this is the first time running and page_hashes.txt doesn't exist, it'll be created
-        pass
+    for other_hash_line in page_hashes:
+        # Counting 0 bits from XOR = counting # bits in common
+        hash_xor = page_hash ^ other_hash_line
+        similarity = f'{hash_xor:0{NUM_HASH_BITS}b}'.count('0')
+        if similarity >= THRESHOLD_BITS:
+            return True
     
     write_line_to_file(HASH_FILE, page_hash)
+    page_hashes.append(page_hash)
     return False
