@@ -103,9 +103,6 @@ def extract_next_links(url, resp):
     Returns a list of the links from a given page and updates the report
     '''
 
-    # refer to global in order to avoid UnboundLocalError
-    global pages_since_save
-
     # is response is bad, add to list of failed files and return no links
     if resp.status != 200 or resp.raw_response is None or not resp.raw_response.content or resp.error is not None:
         write_line_to_file(FAILED_FILE, f'{url} status={resp.status} error={resp.error}')
@@ -155,13 +152,8 @@ def extract_next_links(url, resp):
     # content_words as stop words are removed
     word_counts.update(content_words)
 
-    # increment the pages since the last save
-    pages_since_save += 1
-
-    # once its been 10 pages since the last save, save the stats and restart the counter
-    if pages_since_save >= 10:
-        save_stats()
-        pages_since_save = 0
+    # save the statistics
+    save_stats()
 
     next_links = []
 
