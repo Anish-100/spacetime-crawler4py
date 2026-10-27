@@ -1,9 +1,9 @@
 import os
 import re
 import json
-import hashlib
 from collections import Counter
 from urllib.parse import urlparse, urljoin, urldefrag
+import simhash as sh
 from bs4 import BeautifulSoup
 
 os.makedirs('./files', exist_ok=True) # create directory for storing results
@@ -16,7 +16,6 @@ THRESHOLD_BITS = 62 # minimum number of similar bits required for pages to be co
 MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
 MAX_URL_LEN = 200              # very long URLs are usually traps
-NUM_HASH_BITS = 64             # hashes for simhash are 64 bits
 
 ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"] # stay within the specified domains
 
@@ -144,6 +143,9 @@ def extract_next_links(url, resp):
     # duplicate page: don't count its words or follow its links
     if is_simhash_match(page_hash):
        return []
+      
+    page_hashes.append(page_hash)
+    write_line_to_file(HASH_FILE,page_hash)
     
     # update stats for the report
     if len(words) > longest_page[1]:
@@ -204,7 +206,7 @@ def is_valid(url):
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
-            + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
+            + r"|ps|eps|tex|ppt|pptx|ppsx|doc|docx|xls|xlsx|names"
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
