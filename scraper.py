@@ -1,9 +1,9 @@
 import os
 import re
 import json
-import hashlib
 from collections import Counter
 from urllib.parse import urlparse, urljoin, urldefrag
+import simhash as sh
 from bs4 import BeautifulSoup
 
 os.makedirs('./files', exist_ok=True)
@@ -15,7 +15,6 @@ HASH_FILE = './files/page_hashes.txt'
 MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
 MAX_URL_LEN = 200              # very long URLs are usually traps
-NUM_HASH_BITS = 64             # hashes for simhash are 64 bits
 
 ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"]
 
@@ -47,9 +46,6 @@ def load_hashes():
             return [int(line) for line in f if line.strip()]
     except FileNotFoundError:
         return []     # if this is the first time running and page_hashes.txt doesn't exist, it'll be created
-
-    
-        
 
 word_counts, longest_page = load_stats()
 pages_since_save = 0
@@ -110,14 +106,16 @@ def extract_next_links(url, resp):
 
 
     # duplicate page: don't count its words or follow its links
-    page_hash = _get_simhash(content_words)
-    if _is_simhash_match(page_hash):
+    page_hash = sh.get_simhash(content_words)
+    if sh.is_simhash_match(page_hash,page_hashes):
        return []
+    page_hashes.append(page_hash)
+    write_line_to_file(HASH_FILE,page_hash)
     
     # update stats for the report
     if len(words) > longest_page[1]:
-                longest_page[0], longest_page[1] = base_url, len(words)
-    word_counts.update(content_words) # content_words as stop words are removed.
+        longest_page[0], longest_page[1] = base_url, len(words)
+    word_counts.update(content_words) # use content_words as stop words are removed.
     pages_since_save += 1
     if pages_since_save >= 10:
         save_stats()
@@ -165,7 +163,7 @@ def _is_valid(url):
             r".*\.(css|js|bmp|gif|jpe?g|ico"
             + r"|png|tiff?|mid|mp2|mp3|mp4"
             + r"|wav|avi|mov|mpeg|ram|m4v|mkv|ogg|ogv|pdf"
-            + r"|ps|eps|tex|ppt|pptx|doc|docx|xls|xlsx|names"
+            + r"|ps|eps|tex|ppt|pptx|ppsx|doc|docx|xls|xlsx|names"
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
@@ -173,61 +171,3 @@ def _is_valid(url):
     except Exception as e:
         write_line_to_file(FAILED_FILE, f'Invalid URL: {url}, Type: {e}')
         return False
-
-def _get_simhash(words):   
-    '''
-    Get the simhash of the page.
-
-    Collect words and hash them into 64bits. Sum each hash with weights
-    to determine what the most common bit at a position was and have
-    it accordingly in the simhash
-    '''
-    
-    frequencies = _compute_word_frequencies(words)
-
-    bits = [0] * NUM_HASH_BITS
-    for word, frequency in frequencies.items():
-        # get first 8 bytes of hash --> convert to int --> convert to 64 bits
-        byte_hash = hashlib.sha256(word.encode('utf-8')).digest()[:8]
-        int_hash = int.from_bytes(byte_hash, 'big')
-        bit_hash = f'{int_hash:0{NUM_HASH_BITS}b}'
-
-        # add if the bit is 1 and subtract if the bit is 0
-        for i in range(NUM_HASH_BITS):
-            bits[i] += (1 if bit_hash[i] == '1' else -1) * frequency
-        
-    # positive sum indices = 1, non-positive sum indices = 0
-    return int(''.join('1' if bits[i] > 0 else '0' for i in range(NUM_HASH_BITS)), 2) # converted to base10 for XOR calcs
-
-    
-def _compute_word_frequencies(tokens):
-    '''
-    Takes in a list of tokens and returns a dict of the 
-    tokens and their frequencies.
-    '''
-    frequencies = {}
-    for token in tokens: 
-        if token not in frequencies:
-            frequencies[token] = 1
-        else:
-            frequencies[token] += 1
-    return frequencies
-
-def _is_simhash_match(page_hash):
-    '''
-    Returns true if the given hashes are similar to other page's hashes.
-
-    Checks if ((# common bits) / (# total bits)) >= threshold
-    Threshold for similarity is 62 bits in common, or roughly 97% similarity.
-    '''
-    THRESHOLD_BITS = 62
-    for other_hash_line in page_hashes:
-        # Counting 0 bits from XOR = counting # bits in common
-        hash_xor = page_hash ^ other_hash_line
-        similarity = f'{hash_xor:0{NUM_HASH_BITS}b}'.count('0')
-        if similarity >= THRESHOLD_BITS:
-            return True
-    
-    write_line_to_file(HASH_FILE, page_hash)
-    page_hashes.append(page_hash)
-    return False
