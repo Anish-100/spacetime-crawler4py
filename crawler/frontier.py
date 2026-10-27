@@ -3,15 +3,16 @@ import shelve
 
 from threading import Thread, RLock
 from queue import Queue, Empty
-
 from utils import get_logger, get_urlhash, normalize
 from scraper import _is_valid
+from crawler.robots import RobotsCache
 
 class Frontier(object):
     def __init__(self, config, restart):
         self.logger = get_logger("FRONTIER")
         self.config = config
         self.to_be_downloaded = list()
+        self.robots = RobotsCache(config, self.logger)
         
         if not os.path.exists(self.config.save_file) and not restart:
             # Save file does not exist, but request to load save.

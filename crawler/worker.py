@@ -3,6 +3,7 @@ from threading import Thread
 from inspect import getsource
 from utils.download import download
 from utils import get_logger
+from crawler.robots import is_sitemap, parse_sitemap
 import scraper
 import time
 
@@ -23,6 +24,18 @@ class Worker(Thread):
             if not tbd_url:
                 self.logger.info("Frontier is empty. Stopping Crawler.")
                 break
+
+            # robots.txt: queue the host's sitemaps once, skip disallowed urls
+            robots, new_host = self.frontier.robots.get(tbd_url)
+            if new_host:
+                for sitemap in robots.site_maps() or []:
+                    if scraper._is_valid(sitemap):
+                        self.frontier.add_url(sitemap)
+            if not robots.can_fetch(self.config.user_agent, tbd_url):
+                self.logger.info(f"Blocked by robots.txt: {tbd_url}")
+                self.frontier.mark_url_complete(tbd_url)
+                continue
+
             resp = self.download_with_retry(tbd_url)
             if resp is None:
                 self.logger.error(f"Giving up on {tbd_url}")
@@ -31,11 +44,17 @@ class Worker(Thread):
             self.logger.info(
                 f"Downloaded {tbd_url}, status <{resp.status}>, "
                 f"using cache {self.config.cache_server}.")
-            scraped_urls = scraper.scraper(tbd_url, resp)
+            if is_sitemap(resp):
+                # sitemaps only feed the frontier, they don't count as pages
+                scraped_urls = [u for u in parse_sitemap(resp) if scraper._is_valid(u)]
+            else:
+                scraped_urls = scraper.scraper(tbd_url, resp)
             for scraped_url in scraped_urls:
                 self.frontier.add_url(scraped_url)
             self.frontier.mark_url_complete(tbd_url)
-            time.sleep(self.config.time_delay)
+            delay = robots.crawl_delay(self.config.user_agent) or 0
+            # Choose between robot delay and default delay.
+            time.sleep(max(self.config.time_delay, delay))
 
     def download_with_retry(self, url, attempts=15):
         for i in range(attempts):
