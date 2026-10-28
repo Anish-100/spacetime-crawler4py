@@ -20,7 +20,7 @@ ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.e
 
 # regular expression for common web crawler traps (checked against path + "?" + query)
 TRAP_REGEX = re.compile(
-    r"(calendar|\bical\b|\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|"
+    r"(calendar|\bical\b|\d{4}/\d{2}/\d{2}/?(?=\?)|\d{4}-\d{2}(-\d{2})?/?(?=\?)|=\d{4}-\d{2}(-\d{2})?\b|"
     r"login|logout|sessionid|replytocom|/feed(?=[/?])|/wp-json|"
     r"/(timeline|changeset|raw-attachment|zip-attachment)(?=[/?])|"
     r"[?&;](action|do|share|idx|c|o|rev|version|sort|orderby|order|filter|format|eventdisplay|tribe-bar-date)=)", re.I)
@@ -134,8 +134,9 @@ def extract_next_links(url, resp):
     for tag in soup(["script", "style"]):
         tag.decompose()
 
-    # extract and tokenize the words
-    words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", soup.get_text(separator=" ").lower())
+    # extract and tokenize the words, turning curly apostrophes into normal ones so "don’t" stays one word
+    text = soup.get_text(separator=" ").lower().replace("’", "'")
+    words = re.findall(r"[a-z0-9]+(?:'[a-z]+)?", text)
 
     # record this page as being found (for the report)
     write_line_to_file(VISITED_PAGES_FILE, base_url)
