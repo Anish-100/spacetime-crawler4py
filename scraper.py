@@ -18,10 +18,12 @@ MAX_URL_LEN = 200              # very long URLs are usually traps
 
 ALLOWED_SITES = ["ics.uci.edu", "cs.uci.edu", "informatics.uci.edu", "stat.uci.edu"] # stay within the specified domains
 
-# regular expression for common web crawler traps
+# regular expression for common web crawler traps (checked against path + "?" + query)
 TRAP_REGEX = re.compile(
-    r"(calendar|ical|\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|action=|do=|share=|replytocom|"
-    r"login|logout|sessionid|/feed|/wp-json|\?.*(sort|filter|format)=)", re.I)
+    r"(calendar|\bical\b|\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|"
+    r"login|logout|sessionid|replytocom|/feed(?=[/?])|/wp-json|"
+    r"/(timeline|changeset|raw-attachment|zip-attachment)(?=[/?])|"
+    r"[?&;](action|do|share|idx|c|o|rev|version|sort|orderby|order|filter|format|eventdisplay|tribe-bar-date)=)", re.I)
 
 # stop words that are ignored on pages
 STOP_WORDS = set("""a about above after again against all am an and any are aren't as at be because been before being below 
@@ -121,6 +123,10 @@ def extract_next_links(url, resp):
     # use the final URL (after redirects) without its fragment as the base for relative links
     base_url = urldefrag(resp.raw_response.url or url)[0]
 
+    # if the page redirected outside the allowed domains or into a trap, don't index it
+    if not is_valid(base_url):
+        return []
+
     # parse the page content into separate parts
     soup = BeautifulSoup(content, "html.parser")
 
@@ -215,7 +221,13 @@ def is_valid(url):
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
             +r"|sql|war|mht|pps"
-            + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
+            + r"|rm|smil|wmv|swf|wma|zip|rar|gz"
+            + r"|txt|log|ics|vcf|bib|tsv|json|yaml|yml|ipynb"
+            + r"|c|h|cc|cpp|hpp|java|class|py|m|r|o|so|sh|patch|diff"
+            + r"|svg|webp|heic|wmf|emf|mpg|flv|webm|3gp|aac|flac|m4a"
+            + r"|odp|odt|ods|odg|key|pages|numbers|pptm|docm|xlsm|ppsm"
+            + r"|xz|lzma|z|deb|rpm|apk|img|bak|db|sqlite|mdb|ttf|otf|woff2?|eot"
+            + r"|mat|npy|npz|pkl|pickle|h5|hdf5|nc|rdata|rda|rds|sas|sav|dta|nb|fig)$", parsed.path.lower())
 
     except Exception as e:
 
