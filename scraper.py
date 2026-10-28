@@ -13,7 +13,7 @@ FAILED_FILE = './files/failed_pages.txt' # pages that failed to be visited
 HASH_FILE = './files/page_hashes.txt' # hashes of pages for duplicate checking
 THRESHOLD_BITS = 62 # minimum number of similar bits required for pages to be considered duplicates
 
-MAX_BYTES = 5 * 1024 * 1024    # skip files over 5 MB
+MAX_BYTES = 4 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
 MAX_URL_LEN = 200              # very long URLs are usually traps
 
@@ -210,6 +210,7 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
+            +r"|sql|war|mht|pps|"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
     except Exception as e:
