@@ -4,7 +4,7 @@ import shelve
 from threading import Thread, RLock
 from queue import Queue, Empty
 from utils import get_logger, get_urlhash, normalize
-from scraper import _is_valid
+from scraper import is_valid
 from crawler.robots import RobotsCache
 
 class Frontier(object):
@@ -41,7 +41,7 @@ class Frontier(object):
         total_count = len(self.save)
         tbd_count = 0
         for url, completed in self.save.values():
-            if not completed and _is_valid(url):
+            if not completed and is_valid(url):
                 self.to_be_downloaded.append(url)
                 tbd_count += 1
         self.logger.info(

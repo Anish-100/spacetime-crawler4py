@@ -11,7 +11,6 @@ VISITED_PAGES_FILE = './files/pages_visited.txt'   # one URL per line (for uniqu
 STATS_FILE = './files/stats.json'                  # word counts + longest page
 FAILED_FILE = './files/failed_pages.txt' # pages that failed to be visited
 HASH_FILE = './files/page_hashes.txt' # hashes of pages for duplicate checking
-THRESHOLD_BITS = 62 # minimum number of similar bits required for pages to be considered duplicates
 
 MAX_BYTES = 4 * 1024 * 1024    # skip files over 5 MB
 MIN_WORDS = 50                 # pages with fewer words = low information
@@ -114,6 +113,11 @@ def extract_next_links(url, resp):
     if len(content) > MAX_BYTES:
         return []
 
+    # only parse html pages since other file types (pdfs, slides, source code) have low textual information
+    content_type = resp.raw_response.headers.get('Content-Type', '')
+    if 'html' not in content_type.lower():
+        return []
+
     # use the final URL (after redirects) without its fragment as the base for relative links
     base_url = urldefrag(resp.raw_response.url or url)[0]
 
@@ -138,10 +142,10 @@ def extract_next_links(url, resp):
     content_words = [w for w in words if w not in STOP_WORDS and len(w) > 1]
 
     # get the sim hash for the page contents
-    page_hash = get_simhash(content_words)
+    page_hash = sh.get_simhash(content_words)
 
     # duplicate page: don't count its words or follow its links
-    if is_simhash_match(page_hash):
+    if sh.is_simhash_match(page_hash,page_hashes):
        return []
       
     page_hashes.append(page_hash)
@@ -210,7 +214,7 @@ def is_valid(url):
             + r"|data|dat|exe|bz2|tar|msi|bin|7z|psd|dmg|iso"
             + r"|epub|dll|cnf|tgz|sha1"
             + r"|thmx|mso|arff|rtf|jar|csv"
-            +r"|sql|war|mht|pps|"
+            +r"|sql|war|mht|pps"
             + r"|rm|smil|wmv|swf|wma|zip|rar|gz)$", parsed.path.lower())
 
     except Exception as e:
@@ -219,73 +223,3 @@ def is_valid(url):
         write_line_to_file(FAILED_FILE, f'Invalid URL: {url}, Type: {e}')
 
         return False
-
-def get_simhash(words):   
-    '''
-    Get the simhash of the page
-
-    Collect words and hash them into 64bits. Sum each hash with weights
-    to determine what the most common bit at a position was and have
-    it accordingly in the simhash
-    '''
-    
-    # get the word frequencies
-    frequencies = compute_word_frequencies(words)
-
-    # create a list of 0s for the number of hash bits
-    bits = [0] * NUM_HASH_BITS
-
-    # hash each word
-    for word, frequency in frequencies.items():
-
-        # get first 8 bytes of hash --> convert to int --> convert to 64 bits
-        byte_hash = hashlib.sha256(word.encode('utf-8')).digest()[:8]
-        int_hash = int.from_bytes(byte_hash, 'big')
-        bit_hash = f'{int_hash:0{NUM_HASH_BITS}b}'
-
-        # add if the bit is 1 and subtract if the bit is 0
-        for i in range(NUM_HASH_BITS):
-            bits[i] += (1 if bit_hash[i] == '1' else -1) * frequency
-        
-    # positive sum indices = 1, non-positive sum indices = 0
-    return int(''.join('1' if bits[i] > 0 else '0' for i in range(NUM_HASH_BITS)), 2) # converted to base10 for XOR calcs
-
-    
-def compute_word_frequencies(tokens):
-    '''
-    Takes in a list of tokens and returns a dict of the 
-    tokens and their frequencies.
-    '''
-
-    frequencies = {}
-
-    # increment the frequency for each encounter of a token
-    for token in tokens: 
-        frequencies[token] = frequencies.get(token, 0) + 1
-
-    return frequencies
-
-def is_simhash_match(page_hash):
-    '''
-    Returns true if the given hashes are similar to other page's hashes
-
-    Checks if ((# common bits) / (# total bits)) >= threshold
-    Threshold for similarity is 62 bits in common, or roughly 97% similarity
-    '''
-
-    for other_hash_line in page_hashes:
-
-        # Counting 0 bits from XOR = counting # bits in common
-        hash_xor = page_hash ^ other_hash_line
-        similarity = f'{hash_xor:0{NUM_HASH_BITS}b}'.count('0')
-
-        # if similarity is past the threshold, indicate a match
-        if similarity >= THRESHOLD_BITS:
-            return True
-    
-    # store the hash
-    write_line_to_file(HASH_FILE, page_hash)
-    page_hashes.append(page_hash)
-
-    # no matching hash was found
-    return False

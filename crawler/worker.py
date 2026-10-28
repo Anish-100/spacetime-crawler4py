@@ -29,7 +29,7 @@ class Worker(Thread):
             robots, new_host = self.frontier.robots.get(tbd_url)
             if new_host:
                 for sitemap in robots.site_maps() or []:
-                    if scraper._is_valid(sitemap):
+                    if scraper.is_valid(sitemap):
                         self.frontier.add_url(sitemap)
             if not robots.can_fetch(self.config.user_agent, tbd_url):
                 self.logger.info(f"Blocked by robots.txt: {tbd_url}")
@@ -46,7 +46,7 @@ class Worker(Thread):
                 f"using cache {self.config.cache_server}.")
             if is_sitemap(resp):
                 # sitemaps only feed the frontier, they don't count as pages
-                scraped_urls = [u for u in parse_sitemap(resp) if scraper._is_valid(u)]
+                scraped_urls = [u for u in parse_sitemap(resp) if scraper.is_valid(u)]
             else:
                 scraped_urls = scraper.scraper(tbd_url, resp)
             for scraped_url in scraped_urls:
