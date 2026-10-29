@@ -8,8 +8,9 @@ print("Unique pages:", len(urls))
 data = json.load(open("files/stats.json"))
 print("Longest page:", data["longest"])
 
+word_counts = Counter({w: c for w, c in data["words"].items() if not any(char.isdigit() for char in w)})
 print("\nTop 50 words:")
-for w, c in Counter(data["words"]).most_common(50):
+for w, c in word_counts.most_common(50):
     print(w, c)
 
 subs = Counter()
