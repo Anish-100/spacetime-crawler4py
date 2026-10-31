@@ -1,7 +1,23 @@
-ABOUT
+TEAM QRPS
 -------------------------
-This is the base implementation of a full crawler that uses a spacetime
-cache server to receive requests.
+An updated implementation of a full crawler that uses a spacetime cache server to receive requests.
+
+### Members
+- Alessandra Rae Yu
+- Alex Jonathan Truax
+- Anish Bhandarkar
+- Kent Anthony Le
+Our User agent: IR UF26 41215115,14585232,77434978,75201348
+
+Details
+---
+* We have adapted the scraper by adding stricter content header controls, minimum and maximum page sizes, and more file formats to skip. 
+* We used regex to filter what content within a page is important to us.
+* The final report is  `final crawl report.txt`.
+
+Extra credit implementaions:
+1. Near page similarity: We have implemented a simhash method that used all relevant words in a page, hashes them for quick comparisions to avoid crawling duplicate pages.
+2. Robots.txt + sitemap: Also added feature within the frontier to adhere to robots.txt using urllib's robotparser and follow the sitemap features.
 
 CONFIGURATION
 -------------------------
